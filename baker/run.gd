@@ -1,0 +1,68 @@
+# Baker entrypoint — validates and exports a user-content scene.
+#
+# Invocation (from Elixir baker escript):
+#   godot --headless --path <workspace> \
+#     --script res://baker/run.gd -- avatar|map scenes/<id>.tscn out/<id>.scn
+#
+# Exit codes: 0 = success, 1 = validation/export failure
+@tool
+extends SceneTree
+
+func _init() -> void:
+	var args: Array = OS.get_cmdline_user_args()
+	if args.size() < 3:
+		push_error("Usage: run.gd -- avatar|map <scene_path> <out_path>")
+		quit(1)
+		return
+
+	var content_type: String = args[0]
+	var scene_path: String   = args[1]
+	var out_path: String     = args[2]
+
+	if not scene_path.begins_with("res://"):
+		scene_path = "res://" + scene_path
+	if not out_path.begins_with("res://"):
+		out_path = "res://" + out_path
+
+	var abs_out_dir: String = ProjectSettings.globalize_path(out_path.get_base_dir())
+	DirAccess.make_dir_recursive_absolute(abs_out_dir)
+
+	if not ResourceLoader.exists(scene_path):
+		push_error("Scene not found: %s" % scene_path)
+		quit(1)
+		return
+
+	var packed: PackedScene = ResourceLoader.load(scene_path)
+	if packed == null:
+		push_error("Failed to load scene: %s" % scene_path)
+		quit(1)
+		return
+
+	var exporter := VSKExporter.new()
+	var root := Node.new()
+
+	match content_type:
+		"avatar":
+			var node: Node = packed.instantiate()
+			var result: int = exporter.export_avatar(root, node, out_path)
+			if result != VSKAvatarCallback.Result.AVATAR_OK:
+				push_error("Avatar export failed (code %d)" % result)
+				quit(1)
+				return
+
+		"map":
+			var node: Node = packed.instantiate()
+			var result: int = exporter.export_map(root, node, out_path)
+			if result != OK:
+				push_error("Map export failed (code %d)" % result)
+				quit(1)
+				return
+
+		_:
+			push_error("Unknown content_type '%s' (expected avatar or map)" % content_type)
+			quit(1)
+			return
+
+	root.free()
+	print("baker/run.gd: exported %s → %s" % [content_type, out_path])
+	quit(0)
