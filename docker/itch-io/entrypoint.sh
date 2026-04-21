@@ -1,4 +1,6 @@
 #!/bin/sh
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 K. S. Ernest (iFire) Lee
 
 # Github Action sets inputs when running image
 if [ -z "$BUTLER_API_KEY" ]; then
