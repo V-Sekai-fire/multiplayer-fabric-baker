@@ -67,4 +67,46 @@ func _init() -> void:
 
 	root.free()
 	print("baker/run.gd: exported %s → %s" % [content_type, out_path])
+
+	# ── Chunk, upload, and register the asset ───────────────────────────
+	var asset_id: String = OS.get_environment("ASSET_ID")
+	var uro_url: String  = OS.get_environment("URO_URL")
+	if asset_id.is_empty() or uro_url.is_empty():
+		push_error("ASSET_ID and URO_URL env vars are required for upload")
+		quit(1)
+		return
+
+	# Read exported bytes.
+	var abs_out_path: String = ProjectSettings.globalize_path(out_path)
+	var file_bytes: PackedByteArray = FileAccess.get_file_as_bytes(abs_out_path)
+	if file_bytes.is_empty():
+		push_error("Exported file is empty or unreadable: %s" % abs_out_path)
+		quit(1)
+		return
+
+	# Chunk + PUT all chunks to zone-backend's ChunkServerPlug.
+	var asset_obj := FabricMMOGAsset.new()
+	var chunk_store_url: String = "%s/chunks" % uro_url.rstrip("/")
+	print("baker/run.gd: uploading chunks to %s" % chunk_store_url)
+	var caibx_bytes: PackedByteArray = asset_obj.upload_asset_gd(chunk_store_url, file_bytes)
+	if caibx_bytes.is_empty():
+		push_error("baker/run.gd: upload_asset_gd failed — check log above")
+		quit(1)
+		return
+	print("baker/run.gd: all chunks uploaded, caibx size=%d" % caibx_bytes.size())
+
+	# POST caibx_data (base64) to /storage/:id/bake.
+	# zone-backend stores the index in S3 and sets baked_url.
+	var caibx_b64: String = Marshalls.raw_to_base64(caibx_bytes)
+	var body_json: String = JSON.stringify({"caibx_data": caibx_b64})
+	var bake_url: String = "%s/storage/%s/bake" % [uro_url.rstrip("/"), asset_id]
+	print("baker/run.gd: posting bake to %s" % bake_url)
+	var ok: bool = asset_obj.http_post_gd(bake_url, body_json.to_utf8_buffer(),
+			"application/json")
+	if not ok:
+		push_error("baker/run.gd: POST to %s failed" % bake_url)
+		quit(1)
+		return
+
+	print("baker/run.gd: bake complete for asset %s" % asset_id)
 	quit(0)
