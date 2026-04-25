@@ -1,33 +1,30 @@
 # syntax=docker/dockerfile:1
-# Builds a Godot game project for export using the multiplayer-fabric-godot binary.
+# Builds a Godot game project for export using multiplayer-fabric-godot source.
 #
-# Shares the same build infrastructure as Dockerfile.zone-fabric-build:
-#   --build-context godot-src=/path/to/multiplayer-fabric-godot
-#
-# For local use, build via:
+# Build with:
 #   multiplayer-fabric-hosting/build-baker.sh
-# For CI, the godot-src context is supplied by the workflow.
 
-ARG FEDORA_IMAGE=fedora:41
+ARG ALMA_IMAGE=almalinux:9
 
-# ── Build Godot editor (double precision, no mono) from source ────────────────
-FROM ${FEDORA_IMAGE} AS godot-build
+# ── Build Godot editor (double precision) from source ─────────────────────────
+FROM ${ALMA_IMAGE} AS godot-build
 
-RUN dnf install -y \
-    gcc gcc-c++ make \
-    python3 python3-pip \
-    pkgconfig \
-    libX11-devel libXcursor-devel libXinerama-devel libXrandr-devel \
-    libXi-devel mesa-libGL-devel mesa-libGLU-devel \
-    alsa-lib-devel pulseaudio-libs-devel \
-    ca-certificates && \
+RUN dnf install -y 'dnf-command(config-manager)' && \
+    dnf config-manager --set-enabled crb && \
+    dnf install -y \
+        gcc gcc-c++ make \
+        python3 python3-pip \
+        pkgconf-pkg-config \
+        libX11-devel libXcursor-devel libXinerama-devel libXrandr-devel \
+        libXi-devel mesa-libGL-devel mesa-libGLU-devel \
+        alsa-lib-devel pulseaudio-libs-devel \
+        ca-certificates && \
     dnf clean all && \
     pip3 install scons
 
 WORKDIR /godot-src
 COPY --from=godot-src . .
 
-# Double precision editor — matches the export templates used for game projects.
 RUN --mount=type=cache,target=/root/.cache/scons-godot \
     scons platform=linuxbsd target=editor \
         precision=double \
@@ -36,7 +33,7 @@ RUN --mount=type=cache,target=/root/.cache/scons-godot \
         -j$(nproc)
 
 # ── Baker runtime ─────────────────────────────────────────────────────────────
-FROM ${FEDORA_IMAGE}
+FROM ${ALMA_IMAGE}
 
 ARG INPUT_REPO
 ARG INPUT_BRANCH
@@ -50,7 +47,6 @@ ENV BIN=release/bin
 ENV BUILD_ARGS=--headless
 ENV BUILD_PLATFORMS="Linux Windows Mac Android Web"
 ENV GODOT_EDITOR=godot.linuxbsd.editor.double.x86_64
-ENV GODOT_REPO=V-Sekai-fire/multiplayer-fabric-godot
 ENV TEMPLATE_DIR="${HOMEDIR}/.local/share/godot/export_templates"
 ENV ANDROID_SDK_ROOT="${HOMEDIR}/android_sdk"
 ENV ANDROID_HOME="${HOMEDIR}/android_sdk"
@@ -63,7 +59,6 @@ RUN dnf install -y \
     java-17-openjdk-headless && \
     dnf clean all
 
-# Our Godot binary (double precision, built above)
 COPY --from=godot-build \
     /godot-src/bin/godot.linuxbsd.editor.double.x86_64 \
     /usr/local/bin/godot.linuxbsd.editor.double.x86_64
@@ -77,10 +72,5 @@ RUN chmod +x /build.sh
 
 COPY ./editor_settings-4.tres ./src/
 COPY ./export_presets.cfg ./src/
-
-# Download export templates matching our Godot version from our CI releases.
-# The templates are produced by the linux-build CI job and stored as artifacts.
-# In CI override GODOT_TEMPLATES_URL to point to the artifact download URL.
-ENV GODOT_TEMPLATES_URL=""
 
 ENTRYPOINT ["/bin/bash", "-c", "/build.sh"]
