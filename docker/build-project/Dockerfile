@@ -1,4 +1,42 @@
-FROM ubuntu:24.04
+# syntax=docker/dockerfile:1
+# Builds a Godot game project for export using the multiplayer-fabric-godot binary.
+#
+# Shares the same build infrastructure as Dockerfile.zone-fabric-build:
+#   --build-context godot-src=/path/to/multiplayer-fabric-godot
+#
+# For local use, build via:
+#   multiplayer-fabric-hosting/build-baker.sh
+# For CI, the godot-src context is supplied by the workflow.
+
+ARG FEDORA_IMAGE=fedora:41
+
+# ── Build Godot editor (double precision, no mono) from source ────────────────
+FROM ${FEDORA_IMAGE} AS godot-build
+
+RUN dnf install -y \
+    gcc gcc-c++ make \
+    python3 python3-pip \
+    pkgconfig \
+    libX11-devel libXcursor-devel libXinerama-devel libXrandr-devel \
+    libXi-devel mesa-libGL-devel mesa-libGLU-devel \
+    alsa-lib-devel pulseaudio-libs-devel \
+    ca-certificates && \
+    dnf clean all && \
+    pip3 install scons
+
+WORKDIR /godot-src
+COPY --from=godot-src . .
+
+# Double precision editor — matches the export templates used for game projects.
+RUN --mount=type=cache,target=/root/.cache/scons-godot \
+    scons platform=linuxbsd target=editor \
+        precision=double \
+        accesskit=no \
+        cache_path=/root/.cache/scons-godot \
+        -j$(nproc)
+
+# ── Baker runtime ─────────────────────────────────────────────────────────────
+FROM ${FEDORA_IMAGE}
 
 ARG INPUT_REPO
 ARG INPUT_BRANCH
@@ -7,110 +45,42 @@ ARG INPUT_DEFAULT_EXPORT
 ARG INPUT_XR_PLUGINS
 ARG INPUT_NIGHTLY
 
-# $HOME is overwritten by Github Action at runtime
-ENV HOMEDIR '/root'
+ENV HOMEDIR=/root
+ENV BIN=release/bin
+ENV BUILD_ARGS=--headless
+ENV BUILD_PLATFORMS="Linux Windows Mac Android Web"
+ENV GODOT_EDITOR=godot.linuxbsd.editor.double.x86_64
+ENV GODOT_REPO=V-Sekai-fire/multiplayer-fabric-godot
+ENV TEMPLATE_DIR="${HOMEDIR}/.local/share/godot/export_templates"
+ENV ANDROID_SDK_ROOT="${HOMEDIR}/android_sdk"
+ENV ANDROID_HOME="${HOMEDIR}/android_sdk"
+ENV XR_PLUGIN_REPO=GodotVR/godot_openxr_vendors
 
-ENV BIN 'release/bin'
-ENV BUILD_ARGS '--headless'
-ENV BUILD_PLATFORMS 'Linux Windows Mac Android QuestAndroid PicoAndroid Web Linux_arm64'
-ENV GODOT_REPO 'V-Sekai/world-godot'
-ENV GODOT_ZIP 'v-sekai-godot-linuxbsd.zip'
-ENV GODOT_TPZ 'v-sekai-godot-templates.zip'
-ENV GODOT_EDITOR 'godot.linuxbsd.editor.double.x86_64'
-ENV TEMPLATE_DIR "$HOMEDIR/.local/share/godot/export_templates"
-ENV ANDROID_SDK_ROOT "$HOMEDIR/android_sdk"
-ENV ANDROID_HOME "$HOMEDIR/android_sdk"
-ENV XR_PLUGIN_REPO 'V-Sekai/godot_openxr_vendors'
+RUN dnf install -y \
+    git curl jq zip unzip fontconfig \
+    mesa-libGL mesa-libGLU alsa-lib pulseaudio-libs \
+    libstdc++ libgcc ca-certificates \
+    java-17-openjdk-headless && \
+    dnf clean all
 
-COPY ./build.sh /
+# Our Godot binary (double precision, built above)
+COPY --from=godot-build \
+    /godot-src/bin/godot.linuxbsd.editor.double.x86_64 \
+    /usr/local/bin/godot.linuxbsd.editor.double.x86_64
+RUN chmod +x /usr/local/bin/godot.linuxbsd.editor.double.x86_64 && \
+    ln -s /usr/local/bin/godot.linuxbsd.editor.double.x86_64 /usr/local/bin/godot
+
+WORKDIR ${HOMEDIR}
+
+COPY ./build.sh /build.sh
 RUN chmod +x /build.sh
 
-WORKDIR $HOMEDIR
-
-# Using process substitution feature (not POSIX)
-SHELL [ "/bin/bash", "-c" ]
-
-RUN apt-get update && apt-get upgrade -y \
-  && apt-get install -y git curl jq zip unzip fontconfig openjdk-17-jdk tree
-
-RUN mkdir -p "./src"
 COPY ./editor_settings-4.tres ./src/
 COPY ./export_presets.cfg ./src/
 
-RUN TPZ_URLS=$( \
-        curl -sS -L \
-        -H "Accept: application/vnd.github+json" \
-        "https://api.github.com/repos/${GODOT_REPO}/releases" \
-        | jq -r '.[0].assets.[] | select(.name | startswith(env.GODOT_TPZ)).browser_download_url | @sh' | tr -d "\'" \
-    ) \
-        && echo "${TPZ_URLS}" | while read -r URL; do \
-            echo "Downloading ${URL}"; \
-            curl -OL --url "${URL}" \
-            && echo "Downloaded ${URL} archive."; \
-        done && echo "Unzipping..." \
-            && cat ${GODOT_TPZ}.* > "${GODOT_TPZ%.*}-merge.zip" && rm ${GODOT_TPZ}.* \
-            && unzip "${GODOT_TPZ%.*}-merge.zip" && rm "${GODOT_TPZ%.*}-merge.zip" \
-            && mv ${GODOT_TPZ%.*}/${GODOT_TPZ%.*}.tpz templates.zip && rmdir ${GODOT_TPZ%.*} \
-            && unzip templates.zip && rm templates.zip
+# Download export templates matching our Godot version from our CI releases.
+# The templates are produced by the linux-build CI job and stored as artifacts.
+# In CI override GODOT_TEMPLATES_URL to point to the artifact download URL.
+ENV GODOT_TEMPLATES_URL=""
 
-# Get latest Godot editor metadata
-RUN curl -sS \
-    -H "Accept: application/vnd.github+json" \
-    "https://api.github.com/repos/${GODOT_REPO}/releases" \
-    | jq -r '.[0]' > godot_editor_json.txt
-
-# Get editor commit SHA
-RUN GODOT_TAG=$( cat 'godot_editor_json.txt' | jq -r '.tag_name') \
-    && read obj_type obj_sha < <( echo $( \
-        curl -sS \
-        -H "Accept: application/vnd.github+json" \
-        "https://api.github.com/repos/${GODOT_REPO}/git/ref/tags/${GODOT_TAG}" \
-        | jq -r '.object.type, .object.sha' ) ) \
-    && if [ $obj_type == "commit" ]; then \
-           GODOT_SHA=${obj_sha}; \
-       else \
-           GODOT_SHA=$( curl -sS \
-           -H "Accept: application/vnd.github+json" \
-           "https://api.github.com/repos/${GODOT_REPO}/git/tags/${obj_sha}" \
-           | jq '.object.sha' ); \
-       fi \
-    && echo "Godot Editor SHA: ${GODOT_SHA}" \
-    && echo "${GODOT_SHA}" > godot_editor_sha.txt
-
-# Get editor
-RUN FILE_URL=$( \
-        cat 'godot_editor_json.txt' \
-        | jq -r '.assets.[] | select(.name == env.GODOT_ZIP).browser_download_url' \
-    ) \
-        && echo "Downloading ${FILE_URL}" \
-        && curl -OL --url ${FILE_URL} \
-        && echo "Downloaded ${GODOT_ZIP%.*} archive. Unzipping..." \
-        && unzip ${GODOT_ZIP} && mv ${GODOT_ZIP%.*} ${HOMEDIR}/godot
-
-RUN cp "./godot/${GODOT_EDITOR}" "./${GODOT_EDITOR}" \
-        && chmod +x ${GODOT_EDITOR}
-
-RUN mkdir -p ./src/${BIN} \
-    && cp templates/version.txt ${HOMEDIR} \
-    && GODOT_VERSION=$( cat ${HOMEDIR}/version.txt ) \
-    && mkdir -p ${TEMPLATE_DIR}/${GODOT_VERSION} \
-    && mv -v templates/* ${TEMPLATE_DIR}/${GODOT_VERSION}/
-
-# Setup Android
-RUN curl -sS -OL 'https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip' \
-    && unzip commandlinetools-linux-11076708_latest.zip \
-    && mkdir -p ${ANDROID_SDK_ROOT} \
-    && yes | ./cmdline-tools/bin/sdkmanager --sdk_root=${ANDROID_SDK_ROOT} --licenses \
-    && yes | ./cmdline-tools/bin/sdkmanager --sdk_root=${ANDROID_SDK_ROOT} "ndk;23.2.8568313" 'cmdline-tools;latest' 'build-tools;34.0.0' 'platforms;android-34' 'cmake;3.22.1' \
-    && curl -sS -OL 'https://dl.google.com/android/repository/platform-tools-latest-linux.zip' \
-    && unzip platform-tools-latest-linux.zip -d ${ANDROID_SDK_ROOT} \
-    && mkdir -p ./src/android/plugins ./src/android/build \
-    && touch ./src/android/build/.gdignore \
-    && GODOT_VERSION=$( cat ${HOMEDIR}/version.txt ) \
-    && echo ${GODOT_VERSION} >> ./src/android/.build_version \
-    && unzip ${TEMPLATE_DIR}/${GODOT_VERSION}/android_source.zip -d ./src/android/build
-
-RUN keytool -v -genkey -keystore release.keystore -alias vsekaidebug -keyalg RSA -validity 10000 -dname "cn=Unknown, ou=Unknown, o=Unknown, c=Unknown" -storepass android
-
-
-ENTRYPOINT ["/bin/bash", "-c", "/build.sh"] 
+ENTRYPOINT ["/bin/bash", "-c", "/build.sh"]
