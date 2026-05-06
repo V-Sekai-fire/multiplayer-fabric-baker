@@ -39,6 +39,9 @@ jobs:
           username: x
           password: ${{ secrets.FLY_API_TOKEN }}
 
+      - name: Pull Godot editor binary from GHCR into local cache
+        run: docker pull ghcr.io/v-sekai-fire/godot-editor-double:latest
+
       - name: Build and deploy baker image
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
