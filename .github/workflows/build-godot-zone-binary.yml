@@ -19,10 +19,10 @@ jobs:
 
     steps:
       - name: Checkout baker repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Checkout world-godot source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: V-Sekai-fire/multiplayer-fabric-build
           ref: b27142e94c755c771e97d38bd4cdcb3bc97ba2dc
