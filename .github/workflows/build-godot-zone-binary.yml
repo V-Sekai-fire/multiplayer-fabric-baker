@@ -1,7 +1,7 @@
 name: Build Godot zone binary and push to GHCR
 
 # Builds the zone server runtime (double precision, template_release, no Mono)
-# from V-Sekai/world-godot and pushes to ghcr.io/v-sekai-fire/godot-zone-double.
+# from V-Sekai-fire/multiplayer-fabric-build and pushes to ghcr.io/v-sekai-fire/godot-zone-double.
 # Zone servers import nothing — template_release is smaller and faster than editor.
 
 on:
@@ -24,7 +24,8 @@ jobs:
       - name: Checkout world-godot source
         uses: actions/checkout@v4
         with:
-          repository: V-Sekai/world-godot
+          repository: V-Sekai-fire/multiplayer-fabric-build
+          ref: b27142e94c755c771e97d38bd4cdcb3bc97ba2dc
           path: godot-src
           fetch-depth: 1
 

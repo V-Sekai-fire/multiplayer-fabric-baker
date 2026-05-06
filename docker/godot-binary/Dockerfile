@@ -21,8 +21,11 @@ RUN dnf install -y 'dnf-command(config-manager)' && \
     dnf clean all && \
     pip3 install scons
 
-WORKDIR /godot-src
+WORKDIR /build
 COPY --from=godot-src . .
+
+# SConstruct is inside the godot/ subdirectory of multiplayer-fabric-build
+WORKDIR /build/godot
 
 RUN --mount=type=cache,target=/root/.cache/scons-godot \
     scons platform=linuxbsd target=editor \
@@ -42,7 +45,7 @@ RUN dnf install -y \
     dnf clean all
 
 COPY --from=build \
-    /godot-src/bin/godot.linuxbsd.editor.double.x86_64 \
+    /build/godot/bin/godot.linuxbsd.editor.double.x86_64 \
     /usr/local/bin/godot
 
 RUN chmod +x /usr/local/bin/godot
