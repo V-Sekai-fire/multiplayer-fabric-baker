@@ -18,7 +18,7 @@ FROM almalinux:9
 
 RUN dnf install -y \
         mesa-libGL alsa-lib pulseaudio-libs libstdc++ \
-        fontconfig ca-certificates curl && \
+        fontconfig ca-certificates && \
     dnf clean all
 
 # Copy pre-built Godot binary
