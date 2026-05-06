@@ -44,7 +44,7 @@ jobs:
         run: echo "sha=$(git -C godot-src rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Build and push Godot zone runtime image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/godot-zone/Dockerfile
