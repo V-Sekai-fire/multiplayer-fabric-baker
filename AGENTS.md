@@ -1,28 +1,20 @@
-# AGENTS.md — multiplayer-fabric-baker
+# multiplayer-fabric-baker
 
-Headless Godot asset validator and exporter. Runs as an on-demand Fly Machine
-(not a persistent web service). Deployed as `multiplayer-fabric-baker`.
+Headless Godot asset validator and exporter. Runs as an on-demand Fly Machine; one machine per bake job, started via the Fly Machines API, exits when done.
 
 ## Fly.io deployment
 
-The baker is a **job service** — one machine per bake job, started via the
-Fly Machines API, exits when done.
-
 ### Pre-requisite: build the Godot editor binary
 
-The baker requires a pre-built Godot editor binary (double precision) from
-`V-Sekai-fire/multiplayer-fabric-build@b27142e94`. Build and push to GHCR
-before deploying the baker:
+Build and push the editor binary to GHCR before deploying:
 
 ```bash
 gh workflow run build-godot-binary.yml --repo V-Sekai-fire/multiplayer-fabric-baker
 ```
 
-Takes ~1 hour. Produces: `ghcr.io/v-sekai-fire/godot-editor-double:latest` (private).
+Takes ~1 hour. Produces `ghcr.io/v-sekai-fire/godot-editor-double:latest`.
 
-**Note:** The deploy workflow uses `--local-only` (not `--remote-only`) so the
-GitHub Actions runner can pull the private GHCR image. Fly's remote builder
-has no GHCR credentials.
+The deploy workflow uses `--local-only` because Fly's remote builder cannot pull private GHCR images. The GitHub Actions runner authenticates to GHCR, pulls the image locally, and pushes the built app image to the Fly registry.
 
 ### Triggering a bake job
 
@@ -34,41 +26,34 @@ flyctl machine run registry.fly.io/multiplayer-fabric-baker:latest \
   -- avatar scenes/<uuid>.tscn out/<uuid>.scn
 ```
 
-Exit codes: `0` = success, `1` = validation or upload failure.
+Exit codes: `0` success, `1` validation or upload failure.
 
 ### DNS
 
 | URL | Notes |
 |-----|-------|
-| `https://bake.chibifire.com` | Baker posts results to Uro here |
+| `https://bake.chibifire.com` | Baker posts results to Uro |
 | `https://bakeaf2f.chibifire.com` | Machine-specific alias (MAC suffix `af2f`) |
 
-## Godot binary builds (this repo)
+## Godot binary (this repo)
 
-The editor binary is built from `V-Sekai-fire/multiplayer-fabric-build@b27142e94`:
+Built from `V-Sekai-fire/multiplayer-fabric-build@b27142e94`:
 
-| Workflow | Binary | Flags | GHCR image | Used by |
-|----------|--------|-------|------------|---------|
-| `build-godot-binary.yml` | `godot.linuxbsd.editor.double.x86_64` | `target=editor precision=double` | `godot-editor-double:latest` | baker |
+| Workflow | Binary | Flags | GHCR image |
+|----------|--------|-------|------------|
+| `build-godot-binary.yml` | `godot.linuxbsd.editor.double.x86_64` | `target=editor precision=double` | `godot-editor-double:latest` |
 
-**Source layout:** SConstruct lives at `godot/SConstruct` inside the build repo
-(not at root). The Dockerfile sets `WORKDIR /build/godot` before running scons.
+SConstruct lives at `godot/SConstruct` inside the build repo. The Dockerfile sets `WORKDIR /build/godot` before running scons.
 
-The zone server runtime binary (`godot-zone-double`) is built by
-`build-godot-zone-binary.yml` in **`multiplayer-fabric-zone`**, not this repo.
+The zone server binary (`godot-zone-double`) is built by `build-godot-zone-binary.yml` in `multiplayer-fabric-zone`.
 
-Trigger the editor build:
 ```bash
 gh workflow run build-godot-binary.yml --repo V-Sekai-fire/multiplayer-fabric-baker
 ```
 
 ## What this is
 
-Godot 4 project (headless, editor mode) that validates and exports user-supplied
-avatar / map scenes, chunks them with casync format, uploads chunks to the
-zone-backend chunk store, and posts the resulting `.caibx` index to the
-`/storage/:id/bake` endpoint. It is the asset baking step in cycle 6 of the
-upload pipeline.
+Godot 4 project running in headless editor mode. Validates and exports user-supplied avatar and map scenes, chunks them with casync, uploads chunks to the zone-backend chunk store, and posts the resulting `.caibx` index to `/storage/:id/bake`. This is cycle 6 of the upload pipeline.
 
 ## Running locally
 
@@ -77,23 +62,22 @@ godot --headless --path <workspace> \
   --script res://baker/run.gd -- avatar|map scenes/<id>.tscn out/<id>.scn
 ```
 
-Required environment variables: `ASSET_ID`, `URO_URL`.
+Required env vars: `ASSET_ID`, `URO_URL`.
 
 ## Key files
 
 | Path | Purpose |
 |------|---------|
-| `baker/run.gd` | Headless entrypoint: validate → export → chunk → upload → POST bake |
+| `baker/run.gd` | Entrypoint: validate → export → chunk → upload → POST bake |
 | `project.godot` | Godot 4 project config |
-| `docker/godot-binary/Dockerfile` | Builds editor binary image from multiplayer-fabric-build |
+| `docker/godot-binary/Dockerfile` | Builds editor binary image |
 | `.github/workflows/build-godot-binary.yml` | Weekly editor binary → GHCR |
-| `.github/workflows/deploy.yml` | Deploys baker to Fly.io (local build) |
+| `.github/workflows/deploy.yml` | Deploy to Fly.io |
 
 ## Conventions
 
-- Runs headless only — no UI scenes.
-- `baker/run.gd` must stay compatible with the zone-backend `/chunks` and
-  `/storage/:id/bake` API.
+- No UI scenes.
+- `baker/run.gd` must stay compatible with zone-backend `/chunks` and `/storage/:id/bake`.
 - GDScript files require SPDX headers:
   ```gdscript
   # SPDX-License-Identifier: MIT
