@@ -1,5 +1,45 @@
 # AGENTS.md — multiplayer-fabric-baker
 
+Headless Godot asset validator and exporter. Runs as an on-demand Fly Machine
+(not a persistent web service). Deployed as `multiplayer-fabric-baker`.
+
+## Fly.io deployment
+
+The baker is a **job service** — one machine per bake job, started via the
+Fly Machines API, exits when done.
+
+### Pre-requisite: build the Godot binary image
+
+The baker requires a pre-built Godot editor binary (double precision, from
+`V-Sekai/world-godot`). Build and push it to GHCR before first baker deploy:
+
+```bash
+gh workflow run build-godot-binary.yml --repo V-Sekai-fire/multiplayer-fabric-baker
+```
+
+This takes ~1 hour. Result: `ghcr.io/v-sekai-fire/godot-editor-double:latest` (private).
+
+### Triggering a bake job
+
+```bash
+flyctl machine run registry.fly.io/multiplayer-fabric-baker:latest \
+  --app multiplayer-fabric-baker \
+  --env ASSET_ID=<uuid> \
+  --env URO_URL=https://hub.chibifire.com \
+  -- avatar scenes/<uuid>.tscn out/<uuid>.scn
+```
+
+Exit codes: `0` = success, `1` = validation or upload failure.
+
+### DNS
+
+| URL | Notes |
+|-----|-------|
+| `https://bake.chibifire.com` | Posts results to Uro (same app, alias) |
+| `https://bakeaf2f.chibifire.com` | Machine-specific alias (MAC suffix af2f) |
+
+---
+
 Guidance for AI coding agents working in this submodule.
 
 ## What this is
