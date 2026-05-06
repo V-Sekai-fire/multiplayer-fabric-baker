@@ -45,20 +45,21 @@ Exit codes: `0` = success, `1` = validation or upload failure.
 
 ## Godot binary builds (this repo)
 
-Two binaries are built from `V-Sekai-fire/multiplayer-fabric-build@b27142e94`:
+The editor binary is built from `V-Sekai-fire/multiplayer-fabric-build@b27142e94`:
 
 | Workflow | Binary | Flags | GHCR image | Used by |
 |----------|--------|-------|------------|---------|
 | `build-godot-binary.yml` | `godot.linuxbsd.editor.double.x86_64` | `target=editor precision=double` | `godot-editor-double:latest` | baker |
-| `build-godot-zone-binary.yml` | `godot.linuxbsd.template_release.double.x86_64` | `target=template_release precision=double` | `godot-zone-double:latest` | zone server |
 
 **Source layout:** SConstruct lives at `godot/SConstruct` inside the build repo
-(not at root). Both Dockerfiles set `WORKDIR /build/godot` before running scons.
+(not at root). The Dockerfile sets `WORKDIR /build/godot` before running scons.
 
-Trigger builds:
+The zone server runtime binary (`godot-zone-double`) is built by
+`build-godot-zone-binary.yml` in **`multiplayer-fabric-zone`**, not this repo.
+
+Trigger the editor build:
 ```bash
 gh workflow run build-godot-binary.yml --repo V-Sekai-fire/multiplayer-fabric-baker
-gh workflow run build-godot-zone-binary.yml --repo V-Sekai-fire/multiplayer-fabric-baker
 ```
 
 ## What this is
@@ -85,9 +86,7 @@ Required environment variables: `ASSET_ID`, `URO_URL`.
 | `baker/run.gd` | Headless entrypoint: validate → export → chunk → upload → POST bake |
 | `project.godot` | Godot 4 project config |
 | `docker/godot-binary/Dockerfile` | Builds editor binary image from multiplayer-fabric-build |
-| `docker/godot-zone/Dockerfile` | Builds template_release binary image |
 | `.github/workflows/build-godot-binary.yml` | Weekly editor binary → GHCR |
-| `.github/workflows/build-godot-zone-binary.yml` | Weekly zone binary → GHCR |
 | `.github/workflows/deploy.yml` | Deploys baker to Fly.io (local build) |
 
 ## Conventions
