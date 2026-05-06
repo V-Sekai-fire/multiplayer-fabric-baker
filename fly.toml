@@ -1,0 +1,22 @@
+app            = "multiplayer-fabric-baker"
+primary_region = "iad"
+
+# Baker is a job service — no persistent HTTP endpoint.
+# Machines are spun up on demand via the Fly Machines API and exit after
+# each bake job completes.
+#
+# Invoke a bake job:
+#   flyctl machine run registry.fly.io/multiplayer-fabric-baker:latest \
+#     --app multiplayer-fabric-baker \
+#     --env ASSET_ID=<uuid> \
+#     --env URO_URL=https://multiplayer-fabric-uro.fly.dev \
+#     -- avatar scenes/<uuid>.tscn out/<uuid>.scn
+
+[build]
+  dockerfile = "Dockerfile"
+
+[[vm]]
+  # 4 shared vCPUs — Godot import/export is CPU-bound
+  memory   = "4gb"
+  cpu_kind = "shared"
+  cpus     = 4
