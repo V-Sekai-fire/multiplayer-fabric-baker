@@ -4,8 +4,10 @@ name: Build and push baker image
 # and pushes to ghcr.io/v-sekai-multiplayer-fabric/zone-baker. Consumed by the
 # infra repo's tofu apply, not by flyctl any more.
 #
-# Triggered manually, or automatically once the Godot binary build completes.
-# The chain takes ~1h cold (engine build is the slow link), seconds on a re-run.
+# The engine base image lives in v-sekai-multiplayer-fabric/godot-images
+# (single source of truth, matrix-built editor + runtime). When that repo
+# publishes a new editor image it can fire `repository_dispatch` event
+# `engine-updated` here to trigger a fresh baker build.
 
 on:
   workflow_dispatch:
@@ -15,10 +17,8 @@ on:
       - "**/*.md"
       - "fly.toml"
       - "LICENSE"
-  workflow_run:
-    workflows: ["Build Godot binary and push to GHCR"]
-    types: [completed]
-    branches: [main]
+  repository_dispatch:
+    types: [engine-updated]
 
 concurrency:
   group: build-baker-image-${{ github.ref }}
@@ -30,8 +30,6 @@ permissions:
 
 jobs:
   build-and-push:
-    # Run on workflow_dispatch, on push to main, OR when the binary build succeeded.
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
