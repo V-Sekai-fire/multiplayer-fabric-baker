@@ -12,7 +12,7 @@
 #     -- godot --headless --path /app --script res://baker/run.gd \
 #              -- avatar scenes/<id>.tscn out/<id>.scn
 
-FROM ghcr.io/v-sekai-fire/godot-editor-double:latest AS godot
+FROM ghcr.io/v-sekai-multiplayer-fabric/godot-editor-double:latest AS godot
 
 FROM almalinux:9
 

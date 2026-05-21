@@ -1,48 +1,69 @@
 name: Build and push baker image
 
+# Builds the baker image (FROM ghcr.io/v-sekai-multiplayer-fabric/godot-editor-double)
+# and pushes to ghcr.io/v-sekai-multiplayer-fabric/zone-baker. Consumed by the
+# infra repo's tofu apply, not by flyctl any more.
+#
+# Triggered manually, or automatically once the Godot binary build completes.
+# The chain takes ~1h cold (engine build is the slow link), seconds on a re-run.
+
 on:
-  # Only trigger manually — the baker image depends on the Godot editor binary
-  # (ghcr.io/v-sekai-fire/godot-editor-double) which is built separately by
-  # build-godot-binary.yml and takes ~1 hour. Auto-deploying on push will fail
-  # until that image exists.
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**/*.md"
+      - "fly.toml"
+      - "LICENSE"
   workflow_run:
     workflows: ["Build Godot binary and push to GHCR"]
     types: [completed]
     branches: [main]
 
+concurrency:
+  group: build-baker-image-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
 jobs:
-  deploy:
-    # Only run when triggered manually, or when the binary build succeeded
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+  build-and-push:
+    # Run on workflow_dispatch, on push to main, OR when the binary build succeeded.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: read
+    timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
-      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GHCR (to pull pre-built Godot editor binary)
-        uses: docker/login-action@v4
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Log in to Fly registry
-        uses: docker/login-action@v4
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
         with:
-          registry: registry.fly.io
-          username: x
-          password: ${{ secrets.FLY_API_TOKEN }}
+          images: ghcr.io/v-sekai-multiplayer-fabric/zone-baker
+          tags: |
+            type=sha,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Pull Godot editor binary from GHCR into local cache
-        run: docker pull ghcr.io/v-sekai-fire/godot-editor-double:latest
-
-      - name: Build and deploy baker image
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: flyctl deploy --app multiplayer-fabric-baker --local-only
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=zone-baker
+          cache-to: type=gha,mode=max,scope=zone-baker
